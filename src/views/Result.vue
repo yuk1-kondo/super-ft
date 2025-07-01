@@ -152,6 +152,14 @@
           </button>
         </div>
       </div>
+
+      <!-- Toast通知 -->
+      <div 
+        v-if="toastMessage" 
+        class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300"
+      >
+        {{ toastMessage }}
+      </div>
     </div>
   </div>
 </template>
@@ -177,6 +185,7 @@ const isSpeaking = ref(false)
 const isSpeechLoading = ref(false)
 const speechSupported = ref(speechService.isAvailable())
 const copyButtonText = ref('📋 物語をコピー')
+const toastMessage = ref('')
 
 // モードのラベルを取得
 const getModeLabel = (mode: StoryMode): string => {
@@ -211,7 +220,7 @@ const generateSampleStory = (): GeneratedStory => {
 
 めでたし、めでたし...って、これ本当に鬼退治だったの？？`,
       summary: '令和版桃太郎がインスタ映えを求めて鬼ヶ島へ。鬼とコラボしてバズってしまう現代風昔話。',
-      modes: { modeA: 'parallel', modeB: 'character-collapse', reason: '現代的要素とキャラ崩壊' }
+      modes: { modeA: 'parallel' as StoryMode, modeB: 'character-collapse' as StoryMode, reason: '現代的要素とキャラ崩壊' }
     },
     {
       title: 'シンデレラと浦島太郎の異世界転生ラブコメ',
@@ -235,7 +244,7 @@ const generateSampleStory = (): GeneratedStory => {
 二人は結ばれ、地上で「異世界グルメレストラン」を開業。
 シンデレラの料理と浦島太郎の不老不死パワーで大繁盛しましたとさ。`,
       summary: 'シンデレラが竜宮城に転生！浦島太郎との異世界ラブコメが展開する合体昔話。',
-      modes: { modeA: 'fusion', modeB: 'childlike', reason: '物語合体と子ども風発想' }
+      modes: { modeA: 'fusion' as StoryMode, modeB: 'childlike' as StoryMode, reason: '物語合体と子ども風発想' }
     }
   ]
   
@@ -334,6 +343,7 @@ const copyStoryText = async () => {
   try {
     await navigator.clipboard.writeText(storyText)
     copyButtonText.value = '✅ コピー完了！'
+    showToast('物語をコピーしました')
     setTimeout(() => {
       copyButtonText.value = '📋 物語をコピー'
     }, 2000)
@@ -348,6 +358,7 @@ const copyStoryText = async () => {
     document.body.removeChild(textArea)
     
     copyButtonText.value = '✅ コピー完了！'
+    showToast('物語をコピーしました')
     setTimeout(() => {
       copyButtonText.value = '📋 物語をコピー'
     }, 2000)
@@ -358,7 +369,14 @@ const copyStoryText = async () => {
 const submitFeedback = (rating: string) => {
   // 実際の実装ではFirestoreに送信
   console.log('Feedback submitted:', rating)
-  alert('フィードバックありがとうございます！')
+  showToast('フィードバックありがとうございます！')
+}
+
+const showToast = (message: string) => {
+  toastMessage.value = message
+  setTimeout(() => {
+    toastMessage.value = ''
+  }, 3000)
 }
 
 onMounted(() => {

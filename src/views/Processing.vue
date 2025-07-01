@@ -63,10 +63,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useStoryStore } from '../stores/story'
 
-const route = useRoute()
 const router = useRouter()
 const storyStore = useStoryStore()
 
@@ -121,16 +120,10 @@ const updateTip = () => {
 // 実際の物語生成処理を開始
 const startGeneration = async () => {
   try {
-    console.log('🚀 物語生成処理を開始...')
-    
     if (!storyStore.currentFile) {
-      console.error('❌ ファイルが選択されていません')
       error.value = 'ファイルが選択されていません'
       return
     }
-    
-    console.log('📁 選択されたファイル:', storyStore.currentFile.name)
-    console.log('👤 ユーザー設定:', storyStore.userSettings)
     
     // 実際の物語生成処理を実行
     const storyId = await storyStore.generateStory(
@@ -139,13 +132,8 @@ const startGeneration = async () => {
       storyStore.userSettings.userComment
     )
     
-    console.log('✅ 物語生成完了! ID:', storyId)
-    console.log('📖 生成された物語:', storyStore.currentStory)
-    
     // 完了したら結果画面に遷移
-    console.log('🔄 Result画面に遷移中...')
     await router.push({ name: 'Result', params: { id: storyId } })
-    console.log('✅ 遷移完了')
     
   } catch (err) {
     console.error('❌ 物語生成エラー:', err)

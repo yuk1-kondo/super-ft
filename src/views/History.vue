@@ -112,6 +112,14 @@
         </div>
       </div>
     </div>
+
+    <!-- Toast通知 -->
+    <div 
+      v-if="toastMessage" 
+      class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300"
+    >
+      {{ toastMessage }}
+    </div>
   </div>
 </template>
 
@@ -128,6 +136,7 @@ const authStore = useAuthStore()
 
 // リアクティブな状態
 const sortBy = ref<'date' | 'title'>('date')
+const toastMessage = ref<string | null>(null)
 
 // 計算されたプロパティ - storyStore.storiesを直接参照
 const stories = computed(() => storyStore.stories)
@@ -145,10 +154,8 @@ const sortedStories = computed(() => {
 // 初期化時にFirestore履歴を読み込み
 onMounted(async () => {
   if (authStore.isLoggedIn) {
-    console.log('📚 ログイン済み - Firestore履歴を読み込み中...')
     await storyStore.loadFromFirestore()
   } else {
-    console.log('📖 未ログイン - ローカル履歴のみ表示')
     storyStore.loadFromLocalStorage()
   }
 })
@@ -195,12 +202,12 @@ const shareStory = async (story: GeneratedStory) => {
     } catch (error) {
       // シェアがキャンセルされた場合やエラーの場合はクリップボードにコピー
       await navigator.clipboard.writeText(shareText)
-      alert('物語をクリップボードにコピーしました！')
+      showToast('物語をクリップボードにコピーしました！')
     }
   } else {
     // Web Share APIが利用できない場合はクリップボードにコピー
     await navigator.clipboard.writeText(shareText)
-    alert('物語をクリップボードにコピーしました！')
+    showToast('物語をクリップボードにコピーしました！')
   }
 }
 
@@ -218,6 +225,13 @@ const clearHistory = async () => {
   }
 }
 
+// トースト通知を表示
+const showToast = (message: string) => {
+  toastMessage.value = message
+  setTimeout(() => {
+    toastMessage.value = null
+  }, 3000)
+}
 
 </script>
 
@@ -225,6 +239,7 @@ const clearHistory = async () => {
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -232,6 +247,7 @@ const clearHistory = async () => {
 .line-clamp-3 {
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
