@@ -29,7 +29,7 @@
 ### 1. リポジトリのクローン
 
 \`\`\`bash
-git clone https://github.com/yuki-kondo-biz/super-ft.git
+git clone https://github.com/yuk1-kondo/super-ft.git
 cd super-ft
 \`\`\`
 
