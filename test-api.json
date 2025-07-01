@@ -1,9 +1,0 @@
-{
-  "scripts": {
-    "dev": "vite",
-    "build": "vue-tsc && vite build",
-    "preview": "vite preview",
-    "deploy": "firebase deploy",
-    "test:api": "node -e \"console.log('APIテストスクリプトを追加予定')\""
-  }
-}
