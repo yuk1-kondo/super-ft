@@ -2,237 +2,106 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { 
   signInWithPopup, 
-  GoogleAuthProvider, 
   signOut, 
-  onAuthStateChanged,
-  User as FirebaseUser
+  onAuthStateChanged, 
+  GoogleAuthProvider,
+  type User 
 } from 'firebase/auth'
-import { doc, setDoc, getDoc } from 'firebase/firestore'
-import { auth, db } from '../utils/firebase'
-
-export interface UserProfile {
-  uid: string
-  email: string | null
-  displayName: string | null
-  photoURL: string | null
-  createdAt: Date
-  lastLoginAt: Date
-  storyCount: number
-  favoriteStories: string[]
-}
+import { auth } from '@/utils/firebase'
 
 export const useAuthStore = defineStore('auth', () => {
   // 状態
-  const user = ref<FirebaseUser | null>(null)
-  const userProfile = ref<UserProfile | null>(null)
-  const isLoading = ref(true)
-  const error = ref<string | null>(null)
+  const user = ref<User | null>(null)
+  const isLoading = ref(false)
+  const isInitialized = ref(false)
 
-  // 計算されたプロパティ
-  const isAuthenticated = computed(() => !!user.value)
-  const displayName = computed(() => 
-    userProfile.value?.displayName || user.value?.displayName || 'ゲスト'
-  )
+  // 計算プロパティ
+  const isLoggedIn = computed(() => user.value !== null)
+  const userName = computed(() => user.value?.displayName || 'ゲスト')
+  const userEmail = computed(() => user.value?.email || '')
+  const userPhoto = computed(() => user.value?.photoURL || '')
+  const userId = computed(() => user.value?.uid || '')
 
-  // Google認証でログイン
-  const loginWithGoogle = async () => {
+  // 認証状態の初期化
+  const initAuth = () => {
+    return new Promise<void>((resolve) => {
+      onAuthStateChanged(auth, (firebaseUser) => {
+        user.value = firebaseUser
+        if (!isInitialized.value) {
+          isInitialized.value = true
+          resolve()
+        }
+      })
+    })
+  }
+
+  // Googleログイン
+  const signInWithGoogle = async () => {
+    console.log('Googleログイン開始...')
     try {
-      error.value = null
+      isLoading.value = true
       const provider = new GoogleAuthProvider()
       
-      // 追加のスコープを要求（オプション）
-      provider.addScope('profile')
+      // 追加スコープを明示的に設定
       provider.addScope('email')
+      provider.addScope('profile')
       
+      // カスタムパラメータを設定してCORSエラーを軽減
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      })
+      
+      console.log('認証ポップアップを開いています...')
       const result = await signInWithPopup(auth, provider)
-      
-      // ユーザープロファイルを作成/更新
-      await createOrUpdateUserProfile(result.user)
-      
-      console.log('✅ Google認証成功:', result.user.email)
-      
-    } catch (err) {
-      console.error('❌ Google認証エラー:', err)
-      error.value = err instanceof Error ? err.message : 'ログインに失敗しました'
-      throw err
+      user.value = result.user
+      console.log('ログイン成功:', {
+        displayName: result.user.displayName,
+        email: result.user.email,
+        uid: result.user.uid
+      })
+    } catch (error: any) {
+      console.error('ログインエラー詳細:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      })
+      throw error
+    } finally {
+      isLoading.value = false
     }
   }
 
   // ログアウト
   const logout = async () => {
     try {
+      isLoading.value = true
       await signOut(auth)
       user.value = null
-      userProfile.value = null
-      console.log('✅ ログアウト成功')
-    } catch (err) {
-      console.error('❌ ログアウトエラー:', err)
-      error.value = err instanceof Error ? err.message : 'ログアウトに失敗しました'
-      throw err
-    }
-  }
-
-  // ユーザープロファイルの作成/更新
-  const createOrUpdateUserProfile = async (firebaseUser: FirebaseUser) => {
-    try {
-      const userRef = doc(db, 'users', firebaseUser.uid)
-      const userSnap = await getDoc(userRef)
-      
-      const now = new Date()
-      
-      if (userSnap.exists()) {
-        // 既存ユーザーの最終ログイン日時を更新
-        const existingData = userSnap.data() as UserProfile
-        const updatedProfile: UserProfile = {
-          ...existingData,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL,
-          lastLoginAt: now
-        }
-        
-        await setDoc(userRef, updatedProfile)
-        userProfile.value = updatedProfile
-        
-      } else {
-        // 新規ユーザーの作成
-        const newProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          photoURL: firebaseUser.photoURL,
-          createdAt: now,
-          lastLoginAt: now,
-          storyCount: 0,
-          favoriteStories: []
-        }
-        
-        await setDoc(userRef, newProfile)
-        userProfile.value = newProfile
-        
-        console.log('🎉 新規ユーザー作成:', firebaseUser.email)
-      }
-      
-    } catch (err) {
-      console.error('❌ ユーザープロファイル作成エラー:', err)
-      throw err
-    }
-  }
-
-  // ユーザープロファイルの読み込み
-  const loadUserProfile = async (uid: string) => {
-    try {
-      const userRef = doc(db, 'users', uid)
-      const userSnap = await getDoc(userRef)
-      
-      if (userSnap.exists()) {
-        userProfile.value = userSnap.data() as UserProfile
-      }
-    } catch (err) {
-      console.error('❌ ユーザープロファイル読み込みエラー:', err)
-    }
-  }
-
-  // 物語数を増やす
-  const incrementStoryCount = async () => {
-    if (!userProfile.value) return
-    
-    try {
-      const userRef = doc(db, 'users', userProfile.value.uid)
-      const updatedProfile = {
-        ...userProfile.value,
-        storyCount: userProfile.value.storyCount + 1
-      }
-      
-      await setDoc(userRef, updatedProfile)
-      userProfile.value = updatedProfile
-      
-    } catch (err) {
-      console.error('❌ 物語数更新エラー:', err)
-    }
-  }
-
-  // お気に入りに追加
-  const addToFavorites = async (storyId: string) => {
-    if (!userProfile.value) return
-    
-    try {
-      const updatedFavorites = [...userProfile.value.favoriteStories]
-      if (!updatedFavorites.includes(storyId)) {
-        updatedFavorites.push(storyId)
-        
-        const userRef = doc(db, 'users', userProfile.value.uid)
-        const updatedProfile = {
-          ...userProfile.value,
-          favoriteStories: updatedFavorites
-        }
-        
-        await setDoc(userRef, updatedProfile)
-        userProfile.value = updatedProfile
-        
-        return true
-      }
-      return false
-    } catch (err) {
-      console.error('❌ お気に入り追加エラー:', err)
-      throw err
-    }
-  }
-
-  // お気に入りから削除
-  const removeFromFavorites = async (storyId: string) => {
-    if (!userProfile.value) return
-    
-    try {
-      const updatedFavorites = userProfile.value.favoriteStories.filter(id => id !== storyId)
-      
-      const userRef = doc(db, 'users', userProfile.value.uid)
-      const updatedProfile = {
-        ...userProfile.value,
-        favoriteStories: updatedFavorites
-      }
-      
-      await setDoc(userRef, updatedProfile)
-      userProfile.value = updatedProfile
-      
-    } catch (err) {
-      console.error('❌ お気に入り削除エラー:', err)
-      throw err
-    }
-  }
-
-  // 認証状態の監視を初期化
-  const initializeAuth = () => {
-    onAuthStateChanged(auth, async (firebaseUser) => {
-      user.value = firebaseUser
-      
-      if (firebaseUser) {
-        await loadUserProfile(firebaseUser.uid)
-      } else {
-        userProfile.value = null
-      }
-      
+      console.log('ログアウト成功')
+    } catch (error) {
+      console.error('ログアウトエラー:', error)
+      throw error
+    } finally {
       isLoading.value = false
-    })
+    }
   }
 
   return {
     // 状態
     user,
-    userProfile,
     isLoading,
-    error,
+    isInitialized,
     
-    // 計算されたプロパティ
-    isAuthenticated,
-    displayName,
+    // 計算プロパティ
+    isLoggedIn,
+    userName,
+    userEmail,
+    userPhoto,
+    userId,
     
     // アクション
-    loginWithGoogle,
-    logout,
-    incrementStoryCount,
-    addToFavorites,
-    removeFromFavorites,
-    initializeAuth
+    initAuth,
+    signInWithGoogle,
+    logout
   }
 })

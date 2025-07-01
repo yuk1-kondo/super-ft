@@ -118,15 +118,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useStoryStore } from '../stores/story'
+import { useAuthStore } from '../stores/auth'
 import type { GeneratedStory, StoryMode } from '../types'
 
 const router = useRouter()
+const storyStore = useStoryStore()
+const authStore = useAuthStore()
 
 // リアクティブな状態
-const stories = ref<GeneratedStory[]>([])
 const sortBy = ref<'date' | 'title'>('date')
 
-// 計算されたプロパティ
+// 計算されたプロパティ - storyStore.storiesを直接参照
+const stories = computed(() => storyStore.stories)
+
 const sortedStories = computed(() => {
   const sorted = [...stories.value]
   
@@ -134,6 +139,17 @@ const sortedStories = computed(() => {
     return sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   } else {
     return sorted.sort((a, b) => a.title.localeCompare(b.title))
+  }
+})
+
+// 初期化時にFirestore履歴を読み込み
+onMounted(async () => {
+  if (authStore.isLoggedIn) {
+    console.log('📚 ログイン済み - Firestore履歴を読み込み中...')
+    await storyStore.loadFromFirestore()
+  } else {
+    console.log('📖 未ログイン - ローカル履歴のみ表示')
+    storyStore.loadFromLocalStorage()
   }
 })
 
@@ -159,51 +175,7 @@ const formatDate = (date: Date): string => {
   }).format(new Date(date))
 }
 
-// サンプルデータを生成
-const generateSampleStories = (): GeneratedStory[] => {
-  const sampleStories = [
-    {
-      id: 'story_1',
-      title: '令和の桃太郎とインスタ映えする鬼退治',
-      content: '詳細な物語内容...',
-      summary: '令和版桃太郎がインスタ映えを求めて鬼ヶ島へ。鬼とコラボしてバズってしまう現代風昔話。',
-      modes: { modeA: 'parallel' as StoryMode, modeB: 'character-collapse' as StoryMode, reason: '現代的要素とキャラ崩壊' },
-      triggerInfo: {
-        location: { latitude: 35.6762, longitude: 139.6503, country: '日本', region: '東京都' },
-        datetime: { date: '2025年6月28日', time: '14:30' }
-      },
-      audioUrl: '/audio/story1.mp3',
-      createdAt: new Date('2025-06-28T14:30:00')
-    },
-    {
-      id: 'story_2',
-      title: 'シンデレラと浦島太郎の異世界転生ラブコメ',
-      content: '詳細な物語内容...',
-      summary: 'シンデレラが竜宮城に転生！浦島太郎との異世界ラブコメが展開する合体昔話。',
-      modes: { modeA: 'fusion' as StoryMode, modeB: 'childlike' as StoryMode, reason: '物語合体と子ども風発想' },
-      triggerInfo: {
-        location: { latitude: 34.6937, longitude: 135.5023, country: '日本', region: '大阪府' },
-        datetime: { date: '2025年6月27日', time: '10:15' }
-      },
-      audioUrl: '/audio/story2.mp3',
-      createdAt: new Date('2025-06-27T10:15:00')
-    },
-    {
-      id: 'story_3',
-      title: 'かぐや姫のYouTuber活動記録',
-      content: '詳細な物語内容...',
-      summary: '月の世界からやってきたかぐや姫が現代でYouTuberデビュー。登録者数1000万人突破の物語。',
-      modes: { modeA: 'parallel' as StoryMode, modeB: 'character-collapse' as StoryMode, reason: '現代パラレルとキャラ崩壊' },
-      triggerInfo: {
-        location: { latitude: 35.0116, longitude: 135.7681, country: '日本', region: '京都府' },
-        datetime: { date: '2025年6月26日', time: '20:45' }
-      },
-      createdAt: new Date('2025-06-26T20:45:00')
-    }
-  ]
-  
-  return sampleStories
-}
+
 
 // 物語を表示
 const viewStory = (storyId: string) => {
@@ -212,61 +184,41 @@ const viewStory = (storyId: string) => {
 
 // 物語をシェア
 const shareStory = async (story: GeneratedStory) => {
-  const url = `${window.location.origin}/result/${story.id}`
+  const shareText = `${story.title}\n\n${story.summary}\n\n#爆笑昔話ジェネレーター`
   
   if (navigator.share) {
     try {
       await navigator.share({
         title: story.title,
-        text: story.summary,
-        url: url
+        text: shareText
       })
     } catch (error) {
-      navigator.clipboard.writeText(url)
-      alert('リンクをクリップボードにコピーしました！')
+      // シェアがキャンセルされた場合やエラーの場合はクリップボードにコピー
+      await navigator.clipboard.writeText(shareText)
+      alert('物語をクリップボードにコピーしました！')
     }
   } else {
-    navigator.clipboard.writeText(url)
-    alert('リンクをクリップボードにコピーしました！')
+    // Web Share APIが利用できない場合はクリップボードにコピー
+    await navigator.clipboard.writeText(shareText)
+    alert('物語をクリップボードにコピーしました！')
   }
 }
 
 // 物語を削除
-const deleteStory = (storyId: string) => {
+const deleteStory = async (storyId: string) => {
   if (confirm('この物語を削除しますか？')) {
-    stories.value = stories.value.filter(story => story.id !== storyId)
-    localStorage.setItem('savedStories', JSON.stringify(stories.value))
+    await storyStore.deleteStory(storyId)
   }
 }
 
 // 履歴をクリア
-const clearHistory = () => {
+const clearHistory = async () => {
   if (confirm('すべての履歴を削除しますか？この操作は取り消せません。')) {
-    stories.value = []
-    localStorage.removeItem('savedStories')
+    await storyStore.clearAllStories()
   }
 }
 
-// ローカルストレージから履歴を読み込み
-const loadStories = () => {
-  try {
-    const saved = localStorage.getItem('savedStories')
-    if (saved) {
-      stories.value = JSON.parse(saved)
-    } else {
-      // サンプルデータを使用
-      stories.value = generateSampleStories()
-      localStorage.setItem('savedStories', JSON.stringify(stories.value))
-    }
-  } catch (error) {
-    console.error('Failed to load stories:', error)
-    stories.value = generateSampleStories()
-  }
-}
 
-onMounted(() => {
-  loadStories()
-})
 </script>
 
 <style scoped>

@@ -1,11 +1,47 @@
-import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { defineStore } from 'pinia'
 import type { GeneratedStory, TriggerInfo } from '../types'
-import { extractExifData, getLocationName, getHolidayInfo } from '../utils/exif'
-import { determineStoryModes, generatePrompt, getWeatherInfo } from '../utils/storyGeneration'
+import { generatePrompt, determineStoryModes, getWeatherInfo } from '../utils/storyGeneration'
 import { generateStoryWithGemini, analyzeImageWithVision } from '../utils/gemini'
+import { extractExifData, getLocationName, getHolidayInfo } from '../utils/exif'
 import { analyzeImageLocal, getSaturationLevel } from '../utils/localVision'
 import { generateWeatherStoryContext, generateFallbackWeather } from '../utils/weather'
+import { useAuthStore } from './auth'
+import { db } from '@/utils/firebase'
+import { collection, addDoc, doc, deleteDoc, query, where, orderBy, limit, getDocs } from 'firebase/firestore'
+
+// ブラウザの位置情報APIを使用して現在位置を取得
+const getCurrentLocation = (): Promise<{ latitude: number; longitude: number } | null> => {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      console.warn('❌ Geolocation API not supported')
+      resolve(null)
+      return
+    }
+
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 300000 // 5分間キャッシュ
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        }
+        console.log('✅ ブラウザ位置情報取得成功:', coords)
+        resolve(coords)
+      },
+      (error) => {
+        console.warn('❌ Geolocation error:', error.message)
+        resolve(null)
+      },
+      options
+    )
+  })
+}
 
 export const useStoryStore = defineStore('story', () => {
   // 状態
@@ -57,7 +93,7 @@ export const useStoryStore = defineStore('story', () => {
       // ステップ3: プロンプト生成と物語作成
       processingStep.value = 3
       console.log('✍️ ステップ3: プロンプト生成...')
-      const prompt = generatePrompt(triggerInfo, storyModes, userName, userComment)
+      const prompt = await generatePrompt(triggerInfo, storyModes, userName, userComment)
       console.log('📝 生成されたプロンプト:')
       console.log('='.repeat(50))
       console.log(prompt)
@@ -89,6 +125,9 @@ export const useStoryStore = defineStore('story', () => {
 
       // ローカルストレージに保存
       saveToLocalStorage()
+
+      // Firestoreに自動保存
+      await saveToFirestore(story)
 
       return story.id
     } catch (err) {
@@ -140,27 +179,52 @@ export const useStoryStore = defineStore('story', () => {
           }
         }
       } else {
-        // GPS情報がない場合のデフォルト設定
-        console.log('🌍 GPS情報がないため、ランダムな地域を設定')
-        const randomLocations = [
-          { region: '東京都', country: '日本' },
-          { region: '大阪府', country: '日本' },
-          { region: '京都府', country: '日本' },
-          { region: '神奈川県', country: '日本' },
-          { region: '北海道', country: '日本' },
-          { region: '沖縄県', country: '日本' },
-          { region: 'アメリカ', country: '海外' },
-          { region: 'フランス', country: '海外' },
-          { region: 'イタリア', country: '海外' }
-        ]
-        
-        const randomLocation = randomLocations[Math.floor(Math.random() * randomLocations.length)]
-        triggerInfo.location = {
-          ...randomLocation,
-          latitude: 35.6762 + (Math.random() - 0.5) * 10, // 東京周辺のランダム座標
-          longitude: 139.6503 + (Math.random() - 0.5) * 10
+        // GPS情報がない場合：ブラウザの位置情報APIを使用
+        console.log('🌍 EXIF GPS情報がないため、ブラウザ位置情報APIを試行')
+        try {
+          const currentLocation = await getCurrentLocation()
+          if (currentLocation) {
+            const region = await getLocationName(currentLocation.latitude, currentLocation.longitude)
+            triggerInfo.location = {
+              latitude: currentLocation.latitude,
+              longitude: currentLocation.longitude,
+              country: region === '海外' ? '海外' : '日本',
+              region
+            }
+            console.log('📍 ブラウザAPIで取得した位置:', triggerInfo.location)
+
+            // 現在位置での天気情報取得
+            try {
+              const weather = await getWeatherInfo(currentLocation.latitude, currentLocation.longitude)
+              if (weather) {
+                triggerInfo.weather = weather
+                const weatherContext = generateWeatherStoryContext(weather, region)
+                triggerInfo.weather.context = weatherContext
+                console.log('✅ 現在位置の天気情報取得成功:', weather)
+              }
+            } catch (weatherError) {
+              console.warn('❌ 天気情報取得失敗:', weatherError)
+            }
+          } else {
+            console.log('❌ ブラウザ位置情報APIも失敗、デフォルト位置を使用')
+            // 東京をデフォルトに設定
+            triggerInfo.location = {
+              latitude: 35.6762,
+              longitude: 139.6503,
+              country: '日本',
+              region: '東京都'
+            }
+          }
+        } catch (locationError) {
+          console.warn('❌ 位置情報取得失敗:', locationError)
+          // 東京をデフォルトに設定
+          triggerInfo.location = {
+            latitude: 35.6762,
+            longitude: 139.6503,
+            country: '日本',
+            region: '東京都'
+          }
         }
-        console.log('📍 設定された地域:', triggerInfo.location)
       }
 
       // 撮影日時の処理
@@ -171,24 +235,20 @@ export const useStoryStore = defineStore('story', () => {
           time: exifData.dateTime.split(' ')[1] || '',
           holiday
         }
+        console.log('📅 EXIF撮影日時:', triggerInfo.datetime)
       } else {
-        // 撮影日時がない場合のデフォルト設定
-        console.log('📅 撮影日時がないため、ランダムな日時を設定')
+        // 撮影日時がない場合：現在の日時を使用
+        console.log('📅 EXIF撮影日時がないため、現在の日時を使用')
         const now = new Date()
-        const randomDays = Math.floor(Math.random() * 30) // 過去30日以内
-        const randomDate = new Date(now.getTime() - randomDays * 24 * 60 * 60 * 1000)
-        const randomHour = Math.floor(Math.random() * 24)
-        const randomMinute = Math.floor(Math.random() * 60)
-        
-        const dateStr = randomDate.toISOString().split('T')[0]
-        const timeStr = `${randomHour.toString().padStart(2, '0')}:${randomMinute.toString().padStart(2, '0')}:00`
+        const dateStr = now.toISOString().split('T')[0] // YYYY-MM-DD
+        const timeStr = now.toTimeString().split(' ')[0] // HH:MM:SS
         
         triggerInfo.datetime = {
           date: dateStr,
           time: timeStr,
           holiday: getHolidayInfo(`${dateStr} ${timeStr}`)
         }
-        console.log('📅 設定された日時:', triggerInfo.datetime)
+        console.log('📅 現在の日時を設定:', triggerInfo.datetime)
       }
 
       // 画像解析（Google Cloud Vision API → ローカル解析フォールバック）
@@ -197,19 +257,24 @@ export const useStoryStore = defineStore('story', () => {
         const visionResult = await analyzeImageWithVision(file)
         console.log('📊 Vision API 結果:', visionResult)
         
-        if (visionResult.labels.length > 0) {
-          triggerInfo.objects = visionResult.labels
-          console.log('🏷️ 検出されたラベル:', visionResult.labels)
-        }
-        if (visionResult.colors.length > 0) {
-          triggerInfo.colors = {
-            dominant: visionResult.colors,
-            palette: '鮮やか',
-            saturation: 'high'
+        if (visionResult.labels.length > 0 || visionResult.colors.length > 0) {
+          if (visionResult.labels.length > 0) {
+            triggerInfo.objects = visionResult.labels
+            console.log('🏷️ 検出されたラベル:', visionResult.labels)
           }
-          console.log('🎨 検出された色:', visionResult.colors)
+          if (visionResult.colors.length > 0) {
+            triggerInfo.colors = {
+              dominant: visionResult.colors,
+              palette: '鮮やか',
+              saturation: 'high'
+            }
+            console.log('🎨 検出された色:', visionResult.colors)
+          }
+          console.log('✅ Vision API 解析成功 - 有効なデータを取得')
+        } else {
+          console.log('⚠️ Vision API から空の結果を受信 - ローカル解析に切り替え')
+          throw new Error('Vision API returned empty results')
         }
-        console.log('✅ Vision API 解析成功')
         
       } catch (visionError) {
         console.warn('❌ Vision API 解析失敗、ローカル解析に切り替え:', visionError)
@@ -307,16 +372,35 @@ export const useStoryStore = defineStore('story', () => {
   }
 
   // 物語を削除
-  const deleteStory = (id: string) => {
+  const deleteStory = async (id: string) => {
+    // ローカルから削除
     stories.value = stories.value.filter(story => story.id !== id)
     if (currentStory.value?.id === id) {
       currentStory.value = null
     }
     saveToLocalStorage()
+
+    // Firestoreからも削除（ログイン済みの場合）
+    await deleteFromFirestore(id)
   }
 
   // すべての履歴をクリア
-  const clearAllStories = () => {
+  const clearAllStories = async () => {
+    const authStore = useAuthStore()
+    
+    // Firestore履歴をすべて削除（ログイン済みの場合）
+    if (authStore.isLoggedIn) {
+      try {
+        const storiesToDelete = [...stories.value]
+        const deletePromises = storiesToDelete.map(story => deleteFromFirestore(story.id))
+        await Promise.all(deletePromises)
+        console.log('🗑️ Firestore履歴削除完了:', storiesToDelete.length, '件')
+      } catch (error) {
+        console.error('❌ Firestore履歴削除エラー:', error)
+      }
+    }
+    
+    // ローカル履歴をクリア
     stories.value = []
     currentStory.value = null
     localStorage.removeItem('savedStories')
@@ -348,6 +432,103 @@ export const useStoryStore = defineStore('story', () => {
     }
   }
 
+  // Firestore自動保存機能
+  const saveToFirestore = async (story: GeneratedStory) => {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn || !authStore.userId) {
+        console.log('📝 未ログインのため、ローカル保存のみ実行')
+        return
+      }
+
+      const storyData = {
+        ...story,
+        userId: authStore.userId,
+        userEmail: authStore.userEmail,
+        userName: authStore.userName,
+        createdAt: new Date()
+      }
+
+      const docRef = await addDoc(collection(db, 'stories'), storyData)
+      console.log('☁️ Firestore保存成功:', docRef.id)
+      
+      // Firestoreに保存後、IDを更新
+      story.id = docRef.id
+      
+    } catch (error) {
+      console.error('❌ Firestore保存エラー:', error)
+    }
+  }
+
+  // Firestoreから履歴を読み込み
+  const loadFromFirestore = async () => {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn || !authStore.userId) {
+        console.log('📖 未ログインのため、ローカル履歴のみ表示')
+        return
+      }
+
+      const q = query(
+        collection(db, 'stories'),
+        where('userId', '==', authStore.userId),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      )
+
+      const querySnapshot = await getDocs(q)
+      const firestoreStories: GeneratedStory[] = []
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data()
+        firestoreStories.push({
+          id: doc.id,
+          title: data.title,
+          content: data.content,
+          summary: data.summary,
+          modes: data.modes,
+          triggerInfo: data.triggerInfo,
+          userName: data.userName,
+          userComment: data.userComment,
+          createdAt: data.createdAt.toDate()
+        })
+      })
+
+      // ローカルストレージとFirestoreの履歴をマージ
+      const allStories = [...firestoreStories, ...stories.value]
+      
+      // 重複を除去（IDまたはcreatedAtで判定）
+      const uniqueStories = allStories.filter((story, index, self) => 
+        index === self.findIndex(s => s.id === story.id || s.createdAt.getTime() === story.createdAt.getTime())
+      )
+      
+      // 作成日時でソート
+      stories.value = uniqueStories.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      
+      console.log('📚 Firestore履歴読み込み完了:', firestoreStories.length, '件')
+      
+    } catch (error) {
+      console.error('❌ Firestore読み込みエラー:', error)
+    }
+  }
+
+  // Firestoreから履歴を削除
+  const deleteFromFirestore = async (storyId: string) => {
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.isLoggedIn) {
+        console.log('📝 未ログインのため、ローカル削除のみ実行')
+        return
+      }
+
+      await deleteDoc(doc(db, 'stories', storyId))
+      console.log('🗑️ Firestore削除成功:', storyId)
+      
+    } catch (error) {
+      console.error('❌ Firestore削除エラー:', error)
+    }
+  }
+
   // 初期化時にローカルストレージから読み込み
   loadFromLocalStorage()
 
@@ -367,6 +548,7 @@ export const useStoryStore = defineStore('story', () => {
     deleteStory,
     clearAllStories,
     loadFromLocalStorage,
+    loadFromFirestore,
     setCurrentFile,
     setUserSettings
   }

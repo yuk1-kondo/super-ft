@@ -34,8 +34,8 @@
         </div>
         <div class="card p-6">
           <div class="text-4xl mb-4">☁️</div>
-          <h3 class="text-lg font-bold mb-2 text-primary-600">クラウド保存</h3>
-          <p class="text-sm text-gray-600">お気に入りの物語を保存して、いつでもシェア・再読可能</p>
+          <h3 class="text-lg font-bold mb-2 text-primary-600">簡単シェア</h3>
+          <p class="text-sm text-gray-600">生成した物語をSNSでシェア！テキストコピーで簡単投稿</p>
         </div>
       </div>
 
@@ -56,7 +56,7 @@
             <span v-else>🔐</span>
             <span class="text-lg">{{ isLoading ? 'ログイン中...' : 'Googleでログイン' }}</span>
           </div>
-          <p class="text-sm opacity-90 mt-1">物語を保存・管理できます</p>
+          <p class="text-sm opacity-90 mt-1">すぐに始められます</p>
         </button>
 
         <!-- ゲストログインボタン -->
@@ -72,7 +72,7 @@
         </button>
 
         <p class="text-xs text-gray-500 mt-4">
-          ゲストモードでは物語はブラウザに一時保存されます
+          物語はその場で楽しめます・テキストコピーでシェア可能
         </p>
       </div>
 
@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
@@ -109,11 +109,19 @@ const router = useRouter()
 const authStore = useAuthStore()
 const isLoading = ref(false)
 
+// 認証状態を確認して自動リダイレクト
+onMounted(async () => {
+  await authStore.initAuth()
+  if (authStore.isLoggedIn) {
+    router.push('/app')
+  }
+})
+
 // Googleログイン
 const handleGoogleLogin = async () => {
   isLoading.value = true
   try {
-    await authStore.loginWithGoogle()
+    await authStore.signInWithGoogle()
     router.push('/app')
   } catch (error) {
     console.error('Login error:', error)

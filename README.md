@@ -10,7 +10,9 @@
 - 🎨 **4つの要素**: もしも昔話・昔話合体・キャラ崩壊・子ども風の組み合わせ
 - 🔊 **音声読み上げ**: Text-to-Speech APIで朗読音声を生成
 - 📱 **シェア機能**: SNS投稿・リンク共有・QR共有
-- 📖 **履歴保存**: 過去の物語をローカルに保存
+- 📖 **履歴保存**: Firestoreで過去の物語をクラウド保存・同期
+- 🌐 **多言語対応**: Vision APIラベルの日本語化
+- 🔒 **ユーザー認証**: Google認証でアカウント管理
 
 ## 🛠️ 技術スタック
 
@@ -27,8 +29,8 @@
 ### 1. リポジトリのクローン
 
 \`\`\`bash
-git clone <repository-url>
-cd explosive-folktale-generator
+git clone https://github.com/yuki-kondo-biz/super-ft.git
+cd super-ft
 \`\`\`
 
 ### 2. 依存関係のインストール
@@ -139,3 +141,39 @@ MIT License
 ---
 
 **楽しい物語をお楽しみください！** 🎉
+
+## 📈 開発履歴・最新状況
+
+### ✅ 実装済み機能
+- **基本機能**: 写真アップロード、EXIF解析、物体検出、AI物語生成、音声合成
+- **認証システム**: Google認証、Firebase Authentication
+- **履歴管理**: Firestoreでの物語履歴保存・取得・削除
+- **ユーザビリティ改善**: 
+  - Vision APIラベルの日本語化
+  - Gemini応答からプロンプト承諾文の自動除去
+  - GPS/日時情報がない場合のブラウザ位置情報API活用
+  - エラーハンドリング・ローディング表示の強化
+- **プロンプト改善**: 
+  - ジャンル別テンプレート（もしも昔話、昔話合体、キャラ崩壊、子ども風）
+  - 季節・地域性の動的要素生成
+  - キャラクター偏り防止・禁止事項明示
+- **UI/UX**: TailwindCSSでレスポンシブデザイン、モーダル・フォーム最適化
+- **デプロイ**: Firebase Hostingで本番環境運用中
+
+### 🔧 技術的改善
+- Null安全性の徹底、TypeScript型定義の強化
+- Piniaストアでの状態管理統一
+- Vision API・Gemini API・Firestore・EXIF解析の安定化
+- 不要なコード・テスト用ファイルの削除
+- ビルド・デプロイプロセスの自動化
+
+### 📊 API統合状況
+- **Google Gemini 2.5 Pro**: 物語生成 ✅
+- **Firebase Firestore**: ユーザーデータ・履歴保存 ✅
+- **Google Cloud Vision API**: 画像解析・物体検出 ✅
+- **OpenWeather API**: 天気情報取得 ✅
+- **Web Speech API**: 音声合成 ✅
+
+### 🚀 デプロイ状況
+- **本番環境**: Firebase Hosting稼働中
+- **最終デプロイ**: 2024年最新版（履歴機能・多言語化・認証完備）

@@ -4,7 +4,7 @@
       <!-- 戻るボタン -->
       <div class="mb-6">
         <button 
-          @click="$router.push('/')" 
+          @click="$router.push('/app')" 
           class="btn-secondary"
         >
           ← 新しい物語を生成
@@ -55,13 +55,13 @@
         <div class="text-6xl mb-4">😅</div>
         <h2 class="text-2xl font-bold text-gray-600 mb-4">物語が見つかりません</h2>
         <p class="text-gray-500 mb-6">生成した物語を読み込めませんでした。サンプル物語を表示しています。</p>
-        <button @click="$router.push('/')" class="btn-primary">
+        <button @click="$router.push('/app')" class="btn-primary">
           新しい物語を生成する
         </button>
       </div>
 
       <!-- 操作パネル -->
-      <div v-if="story" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div v-if="story" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <!-- 音声再生 -->
         <div class="card text-center">
           <div class="text-3xl mb-3">🔊</div>
@@ -74,47 +74,23 @@
           >
             <span v-if="isSpeechLoading">🔄 準備中...</span>
             <span v-else-if="isSpeaking">⏸️ 停止</span>
-            <span v-else>▶️ 再生</span>
+            <span v-else">▶️ 再生</span>
           </button>
           <p v-if="!speechSupported" class="text-xs text-red-500 mt-2">
             お使いのブラウザでは音声機能がサポートされていません
           </p>
         </div>
 
-        <!-- シェア -->
+        <!-- 物語をコピー -->
         <div class="card text-center">
-          <div class="text-3xl mb-3">📱</div>
-          <h3 class="font-bold mb-2">シェアする</h3>
-          <button @click="shareStory" class="btn-secondary w-full">
-            🔗 リンクをコピー
+          <div class="text-3xl mb-3">�</div>
+          <h3 class="font-bold mb-2">物語をコピー</h3>
+          <button @click="copyStoryText" class="btn-secondary w-full">
+            {{ copyButtonText }}
           </button>
-        </div>
-
-        <!-- 保存 -->
-        <div class="card text-center">
-          <div class="text-3xl mb-3">💾</div>
-          <h3 class="font-bold mb-2">保存する</h3>
-          <div v-if="authStore.isAuthenticated" class="space-y-2">
-            <button @click="saveToFirestore" class="btn-primary w-full">
-              ☁️ クラウドに保存
-            </button>
-            <button 
-              @click="toggleFavorite" 
-              class="btn-secondary w-full"
-              :class="{ 'bg-red-100 text-red-700': isFavorite }"
-            >
-              {{ isFavorite ? '❤️ お気に入り済み' : '🤍 お気に入りに追加' }}
-            </button>
-          </div>
-          <div v-else>
-            <button @click="saveStory" class="btn-secondary w-full mb-2">
-              📖 ローカルに保存
-            </button>
-            <p class="text-xs text-gray-500">
-              <router-link to="/" class="text-primary-600 underline">ログイン</router-link>
-              するとクラウドに保存できます
-            </p>
-          </div>
+          <p class="text-xs text-gray-500 mt-2">
+            物語のテキストをコピーしてSNSなどでシェアできます
+          </p>
         </div>
       </div>
 
@@ -181,18 +157,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useStoryStore } from '../stores/story'
-import { useAuthStore } from '../stores/auth'
-import { useUserStoryStore } from '../stores/userStory'
 import { speechService } from '../utils/speech'
 import type { GeneratedStory, StoryMode } from '../types'
 
 const route = useRoute()
 const storyStore = useStoryStore()
-const authStore = useAuthStore()
-const userStoryStore = useUserStoryStore()
 
 const props = defineProps<{
   id: string
@@ -204,12 +176,7 @@ const isLoaded = ref(false)
 const isSpeaking = ref(false)
 const isSpeechLoading = ref(false)
 const speechSupported = ref(speechService.isAvailable())
-
-// お気に入り状態を計算
-const isFavorite = computed(() => {
-  if (!authStore.userProfile || !story.value) return false
-  return authStore.userProfile.favoriteStories.includes(story.value.id)
-})
+const copyButtonText = ref('📋 物語をコピー')
 
 // モードのラベルを取得
 const getModeLabel = (mode: StoryMode): string => {
@@ -358,75 +325,33 @@ const loadStory = () => {
   isLoaded.value = true
 }
 
-// 物語をシェア
-const shareStory = async () => {
-  const url = window.location.href
-  
-  if (navigator.share) {
-    try {
-      await navigator.share({
-        title: story.value.title,
-        text: story.value.summary,
-        url: url
-      })
-    } catch (error) {
-      // フォールバック: クリップボードにコピー
-      navigator.clipboard.writeText(url)
-      alert('リンクをクリップボードにコピーしました！')
-    }
-  } else {
-    // Web Share API が使えない場合
-    navigator.clipboard.writeText(url)
-    alert('リンクをクリップボードにコピーしました！')
-  }
-}
-
-// 物語をFirestoreに保存
-const saveToFirestore = async () => {
+// 物語のテキストをコピー
+const copyStoryText = async () => {
   if (!story.value) return
   
-  try {
-    await userStoryStore.saveStoryToFirestore(story.value)
-    alert('物語をクラウドに保存しました！')
-  } catch (error) {
-    console.error('保存エラー:', error)
-    alert('保存に失敗しました。もう一度お試しください。')
-  }
-}
-
-// お気に入りの切り替え
-const toggleFavorite = async () => {
-  if (!story.value || !authStore.isAuthenticated) return
+  const storyText = `${story.value.title}\n\n${story.value.content}\n\n📝 3行要約\n${story.value.summary}\n\n🤖 生成: 爆笑昔話ジェネレーター`
   
   try {
-    if (isFavorite.value) {
-      await authStore.removeFromFavorites(story.value.id)
-      alert('お気に入りから削除しました')
-    } else {
-      const added = await authStore.addToFavorites(story.value.id)
-      if (added) {
-        alert('お気に入りに追加しました！')
-      }
-    }
+    await navigator.clipboard.writeText(storyText)
+    copyButtonText.value = '✅ コピー完了！'
+    setTimeout(() => {
+      copyButtonText.value = '📋 物語をコピー'
+    }, 2000)
   } catch (error) {
-    console.error('お気に入り更新エラー:', error)
-    alert('更新に失敗しました。もう一度お試しください。')
+    console.error('コピーエラー:', error)
+    // フォールバック: テキスト選択
+    const textArea = document.createElement('textarea')
+    textArea.value = storyText
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+    
+    copyButtonText.value = '✅ コピー完了！'
+    setTimeout(() => {
+      copyButtonText.value = '📋 物語をコピー'
+    }, 2000)
   }
-}
-
-// 物語を保存（ローカル）
-const saveStory = () => {
-  // ローカルストレージに保存
-  const savedStories = JSON.parse(localStorage.getItem('savedStories') || '[]')
-  savedStories.unshift(story.value)
-  
-  // 最大10件まで保存
-  if (savedStories.length > 10) {
-    savedStories.splice(10)
-  }
-  
-  localStorage.setItem('savedStories', JSON.stringify(savedStories))
-  alert('ローカルに保存しました！')
 }
 
 // フィードバック送信

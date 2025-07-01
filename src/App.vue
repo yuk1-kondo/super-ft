@@ -38,28 +38,41 @@
             </router-link>
           </nav>
           
-          <!-- ユーザー情報 & ログアウト -->
-          <div class="ml-2 sm:ml-4">
-            <div v-if="authStore.isAuthenticated" class="flex items-center gap-1 sm:gap-2">
-              <img 
-                v-if="authStore.user?.photoURL"
-                :src="authStore.user.photoURL" 
-                :alt="authStore.displayName"
-                class="w-6 h-6 sm:w-8 sm:h-8 rounded-full border border-gray-300"
-              >
-              <div v-else class="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gray-300 flex items-center justify-center">
-                <span class="text-xs sm:text-sm">👤</span>
-              </div>
-              <button 
-                @click="handleLogout"
-                class="btn-secondary text-xs px-2 py-1"
-              >
-                <span class="hidden sm:inline">ログアウト</span>
-                <span class="sm:hidden">🚪</span>
-              </button>
-            </div>
-            <div v-else class="text-xs sm:text-sm text-gray-600">
-              ゲストモード
+          <!-- シンプルなナビゲーション -->
+          <div class="ml-2 sm:ml-4 flex items-center space-x-2">
+            <!-- ログイン/ログアウトボタン -->
+            <div v-if="authStore.isInitialized" class="flex items-center space-x-2">
+              <template v-if="authStore.isLoggedIn">
+                <!-- ユーザー情報 -->
+                <div class="flex items-center space-x-2">
+                  <img 
+                    v-if="authStore.userPhoto" 
+                    :src="authStore.userPhoto" 
+                    :alt="authStore.userName"
+                    class="w-6 h-6 sm:w-8 sm:h-8 rounded-full"
+                  >
+                  <span class="text-xs sm:text-sm text-gray-700 hidden sm:block">
+                    {{ authStore.userName }}
+                  </span>
+                  <button 
+                    @click="authStore.logout"
+                    :disabled="authStore.isLoading"
+                    class="text-xs sm:text-sm text-gray-600 hover:text-red-600 transition-colors disabled:opacity-50"
+                  >
+                    {{ authStore.isLoading ? 'ログアウト中...' : 'ログアウト' }}
+                  </button>
+                </div>
+              </template>
+              <template v-else>
+                <!-- ログインボタン -->
+                <button 
+                  @click="handleGoogleLogin"
+                  :disabled="authStore.isLoading"
+                  class="text-xs sm:text-sm bg-blue-600 text-white px-2 py-1 sm:px-3 sm:py-1 rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {{ authStore.isLoading ? 'ログイン中...' : 'Googleログイン' }}
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -101,34 +114,38 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onErrorCaptured } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from './stores/auth'
-
-// ルーター
-const router = useRouter()
+import { ref, onErrorCaptured, onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 
 // 認証ストア
 const authStore = useAuthStore()
 
+// 認証の初期化
+onMounted(async () => {
+  try {
+    await authStore.initAuth()
+    console.log('認証の初期化完了')
+  } catch (error) {
+    console.error('認証の初期化に失敗:', error)
+    hasError.value = true
+    errorMessage.value = '認証の初期化に失敗しました'
+  }
+})
+
+// Googleログインのエラーハンドリング
+const handleGoogleLogin = async () => {
+  try {
+    await authStore.signInWithGoogle()
+  } catch (error) {
+    console.error('ログインエラー:', error)
+    hasError.value = true
+    errorMessage.value = 'ログインに失敗しました。Firebase Consoleでの設定を確認してください。'
+  }
+}
+
 // エラーハンドリング
 const hasError = ref(false)
 const errorMessage = ref('')
-
-// ログアウト処理
-const handleLogout = async () => {
-  try {
-    await authStore.logout()
-    // ランディングページに戻る
-    if (router.currentRoute.value.name !== 'Landing') {
-      router.push('/')
-    }
-  } catch (error) {
-    console.error('Logout error:', error)
-    hasError.value = true
-    errorMessage.value = 'ログアウトに失敗しました'
-  }
-}
 
 // グローバルエラーハンドラー
 onErrorCaptured((error, _instance, info) => {

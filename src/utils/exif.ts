@@ -9,11 +9,16 @@ export const extractExifData = async (file: File): Promise<ExifData> => {
     
     console.log('🔍 抽出されたEXIFタグ数:', Object.keys(tags).length)
     console.log('📍 GPS情報:')
-    console.log('- GPSLatitude:', tags.GPSLatitude?.description)
-    console.log('- GPSLongitude:', tags.GPSLongitude?.description)
+    console.log('- GPSLatitude:', tags.GPSLatitude?.description, '(raw:', tags.GPSLatitude?.value, ')')
+    console.log('- GPSLongitude:', tags.GPSLongitude?.description, '(raw:', tags.GPSLongitude?.value, ')')
+    console.log('- GPSLatitudeRef:', tags.GPSLatitudeRef?.description)
+    console.log('- GPSLongitudeRef:', tags.GPSLongitudeRef?.description)
     console.log('📅 日時情報:')
-    console.log('- DateTime:', tags.DateTime?.description)
-    console.log('- DateTimeOriginal:', tags.DateTimeOriginal?.description)
+    console.log('- DateTime:', tags.DateTime?.description, '(raw:', tags.DateTime?.value, ')')
+    console.log('- DateTimeOriginal:', tags.DateTimeOriginal?.description, '(raw:', tags.DateTimeOriginal?.value, ')')
+    console.log('📷 カメラ情報:')
+    console.log('- Make:', tags.Make?.description)
+    console.log('- Model:', tags.Model?.description)
     
     const exifData: ExifData = {}
     
@@ -35,8 +40,23 @@ export const extractExifData = async (file: File): Promise<ExifData> => {
     // 撮影日時の抽出
     if (tags.DateTime || tags.DateTimeOriginal) {
       const dateTimeTag = tags.DateTimeOriginal || tags.DateTime
-      exifData.dateTime = dateTimeTag.description
-      console.log('📅 撮影日時:', exifData.dateTime)
+      let dateTimeString = dateTimeTag.description || ''
+      
+      // EXIF形式（YYYY:MM:DD HH:MM:SS）をISO形式に変換
+      if (dateTimeString.includes(':')) {
+        const parts = dateTimeString.split(' ')
+        if (parts.length >= 2) {
+          const datePart = parts[0].replace(/:/g, '-') // YYYY:MM:DD → YYYY-MM-DD
+          const timePart = parts[1] // HH:MM:SS
+          dateTimeString = `${datePart} ${timePart}`
+        } else if (parts.length === 1 && parts[0].includes(':')) {
+          // 日付のみの場合
+          dateTimeString = parts[0].replace(/:/g, '-')
+        }
+      }
+      
+      exifData.dateTime = dateTimeString
+      console.log('📅 撮影日時（変換後）:', exifData.dateTime)
     } else {
       console.log('⚠️ 撮影日時が見つかりません')
     }
@@ -61,13 +81,34 @@ export const extractExifData = async (file: File): Promise<ExifData> => {
 // DMS（度分秒）形式をDD（十進度）形式に変換
 const convertDMSToDD = (dmsString: string, ref: string): number => {
   try {
-    const dmsPattern = /(\d+)°\s*(\d+)'\s*([\d.]+)"/
-    const match = dmsString.match(dmsPattern)
+    console.log(`🔄 DMS変換: "${dmsString}" (${ref})`)
+    
+    // 複数のパターンに対応
+    let dmsPattern = /(\d+)°\s*(\d+)'\s*([\d.]+)"/
+    let match = dmsString.match(dmsPattern)
+    
+    if (!match) {
+      // 別のパターンを試行
+      dmsPattern = /(\d+),\s*(\d+),\s*([\d.]+)/
+      match = dmsString.match(dmsPattern)
+    }
+    
+    if (!match) {
+      // カンマ区切りの度分秒
+      dmsPattern = /(\d+)\s*deg\s*(\d+)'\s*([\d.]+)"/
+      match = dmsString.match(dmsPattern)
+    }
     
     if (!match) {
       // 既に十進度形式の場合
-      const decimal = parseFloat(dmsString)
-      return (ref === 'S' || ref === 'W') ? -decimal : decimal
+      const decimal = parseFloat(dmsString.replace(/[^\d.-]/g, ''))
+      if (isNaN(decimal)) {
+        console.warn('無効な座標文字列:', dmsString)
+        return 0
+      }
+      const result = (ref === 'S' || ref === 'W') ? -decimal : decimal
+      console.log(`✅ 十進度として解析: ${result}`)
+      return result
     }
     
     const degrees = parseInt(match[1])
@@ -81,9 +122,10 @@ const convertDMSToDD = (dmsString: string, ref: string): number => {
       decimal = -decimal
     }
     
+    console.log(`✅ DMS変換完了: ${degrees}°${minutes}'${seconds}" → ${decimal}`)
     return decimal
   } catch (error) {
-    console.warn('DMS to DD conversion failed:', error)
+    console.warn('DMS to DD conversion failed:', error, 'for:', dmsString)
     return 0
   }
 }
@@ -115,9 +157,22 @@ export const getLocationName = async (latitude: number, longitude: number): Prom
 // 撮影日が祝日かどうかを判定
 export const getHolidayInfo = (dateString: string): string | undefined => {
   try {
-    const date = new Date(dateString)
+    // 日付文字列をパース（YYYY-MM-DD HH:MM:SS or YYYY-MM-DD）
+    let dateStr = dateString
+    if (dateStr.includes(' ')) {
+      dateStr = dateStr.split(' ')[0] // 日付部分のみ取得
+    }
+    
+    const date = new Date(dateStr + 'T00:00:00')
+    if (isNaN(date.getTime())) {
+      console.warn('Invalid date string:', dateString)
+      return undefined
+    }
+    
     const month = date.getMonth() + 1
     const day = date.getDate()
+    
+    console.log(`🗓️ 祝日判定: ${month}/${day}`)
     
     // 主要な祝日を簡易判定
     const holidays: Record<string, string> = {
@@ -138,7 +193,11 @@ export const getHolidayInfo = (dateString: string): string | undefined => {
     }
     
     const key = `${month}/${day}`
-    return holidays[key]
+    const holiday = holidays[key]
+    if (holiday) {
+      console.log(`🎌 祝日検出: ${holiday}`)
+    }
+    return holiday
   } catch (error) {
     console.warn('Holiday detection failed:', error)
     return undefined
