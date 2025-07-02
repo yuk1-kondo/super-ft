@@ -83,7 +83,7 @@
 
         <!-- 物語をコピー -->
         <div class="card text-center">
-          <div class="text-3xl mb-3">�</div>
+          <div class="text-3xl mb-3">📋</div>
           <h3 class="font-bold mb-2">物語をコピー</h3>
           <button @click="copyStoryText" class="btn-secondary w-full">
             {{ copyButtonText }}
@@ -307,28 +307,13 @@ const toggleSpeech = async () => {
 
 // ストーリーデータの読み込み
 const loadStory = () => {
-  console.log('📖 物語を読み込み中... ID:', route.params.id)
-  
   const foundStory = storyStore.getStory(route.params.id as string)
-  console.log('🔍 ストアから取得した物語:', foundStory)
   
   if (foundStory) {
     story.value = foundStory
-    console.log('✅ 物語を正常に読み込みました:', story.value.title)
-    
-    // デバッグ: トリガー情報の詳細を確認
-    console.log('🎯 Result.vue - トリガー情報の確認:')
-    console.log('  triggerInfo:', story.value.triggerInfo)
-    console.log('  colors:', story.value.triggerInfo?.colors)
-    console.log('  colors.dominant:', story.value.triggerInfo?.colors?.dominant)
-    console.log('  objects:', story.value.triggerInfo?.objects)
-    console.log('  colors存在確認:', !!story.value.triggerInfo?.colors)
-    console.log('  objects存在確認:', !!story.value.triggerInfo?.objects)
   } else {
-    console.log('⚠️ 物語が見つかりません。サンプルデータを使用します')
     // サンプルデータを使用
     story.value = generateSampleStory()
-    console.log('📝 サンプル物語を生成:', story.value.title)
   }
   
   isLoaded.value = true
@@ -366,9 +351,8 @@ const copyStoryText = async () => {
 }
 
 // フィードバック送信
-const submitFeedback = (rating: string) => {
+const submitFeedback = (_rating: string) => {
   // 実際の実装ではFirestoreに送信
-  console.log('Feedback submitted:', rating)
   showToast('フィードバックありがとうございます！')
 }
 
@@ -387,7 +371,7 @@ onMounted(() => {
     // 音声リストの読み込み（非同期で読み込まれる場合がある）
     if (speechService.getVoices().length === 0) {
       speechSynthesis.addEventListener('voiceschanged', () => {
-        console.log('利用可能な音声:', speechService.getJapaneseVoices())
+        // 利用可能な音声が読み込まれました
       })
     }
   }

@@ -56,17 +56,11 @@ export const analyzeImageLocal = async (imageFile: File): Promise<{
   colors: string[]
 }> => {
   try {
-    console.log('🎨 ローカル画像解析を開始...')
-    
     // ファイル名やタイプから簡易的なラベルを推測
     const labels = getLabelsFromFile(imageFile)
     
     // Canvas APIで主要色を抽出
     const colors = await extractColorsFromImage(imageFile)
-    
-    console.log('✅ ローカル画像解析完了')
-    console.log('推測されたラベル:', labels)
-    console.log('抽出された色:', colors)
     
     return { labels, colors }
   } catch (error) {
